@@ -1,0 +1,19 @@
+{
+  "initial_prompt_terms": [
+    "Bill Clinton",
+    "Hillary Clinton",
+    "Jeffrey Epstein",
+    "Kentucky",
+    "Republican Party",
+    "Democratic Party",
+    "Democrats",
+    "Donald Trump"
+  ],
+  "asr_corrections": [
+    { "hear_as": "Doug Duggan", "correct": "Bill Clinton" },
+    { "hear_as": "Doug Dugan", "correct": "Bill Clinton" },
+    { "hear_as": "Dugan", "correct": "Clinton" },
+    { "hear_as": "Jeffrey Epstein music", "correct": "Jeffrey Epstein news" },
+    { "hear_as": "Epstein music", "correct": "Epstein case" }
+  ]
+}

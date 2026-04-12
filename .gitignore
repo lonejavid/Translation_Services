@@ -21,6 +21,8 @@ build/
 # Server cache & generated media
 server/cache/
 *.wav
+*.pid
+nohup*.log
 !**/fixtures/**/*.wav
 
 # Node / React

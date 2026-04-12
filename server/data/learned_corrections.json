@@ -1,0 +1,35 @@
+{
+  "asr_phrases": [],
+  "translation_memory": [
+    {
+      "source": "you can never miss two ways in a row",
+      "translation": "आप कभी भी एक पंक्ति में दो रास्ते नहीं च",
+      "target_lang": "hi",
+      "ts": "2026-04-10T06:10:13Z"
+    },
+    {
+      "source": "favorite law from James",
+      "translation": "और यह James Blake",
+      "target_lang": "hi",
+      "ts": "2026-04-10T06:10:55Z"
+    },
+    {
+      "source": "We have one life in this.",
+      "translation": "لدينا حياة واحدة في هذه الدنيا",
+      "target_lang": "ar",
+      "ts": "2026-04-11T08:48:08Z"
+    },
+    {
+      "source": "You know what makes you perfect?",
+      "translation": "क्या आप जानती हैं कौन सी चीज़ आपको perfect बनाती है?",
+      "target_lang": "hi",
+      "ts": "2026-04-11T14:57:04Z"
+    },
+    {
+      "source": "When you make someone smile.",
+      "translation": "जब आप किसी के चेहरे पर मुस्कान ला देती हैं।",
+      "target_lang": "hi",
+      "ts": "2026-04-11T14:58:38Z"
+    }
+  ]
+}
