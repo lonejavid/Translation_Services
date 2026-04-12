@@ -1,10 +1,13 @@
+# Use Python 3.11 (or 3.10 / 3.9). Coqui TTS on PyPI requires Python <3.12.
 python-dotenv>=1.0.0
-fastapi==0.110.0
+# chatterbox-tts → gradio 5.44.1 requires fastapi>=0.115.2
+fastapi>=0.115.2,<0.116
 uvicorn[standard]==0.29.0
 slowapi>=0.1.9
 yt-dlp>=2024.3.10
 mlx-whisper>=0.4.0
-transformers==4.38.0
+# Aligns with chatterbox-tts 0.1.6 (0.1.7 wants transformers 5.2 — breaks Coqui XTTS).
+transformers==4.46.3
 torch>=2.0.0
 torchaudio>=2.0.0
 TTS>=0.22.0
@@ -23,29 +26,18 @@ numpy>=1.22.0,<2.0.0
 deep-translator>=1.11.0
 beautifulsoup4>=4.12.0
 edge-tts>=6.1.0
-librosa>=0.10.0
+# chatterbox-tts 0.1.6 pins librosa==0.11.0 (resemble-enhance 0.0.1 pins 0.10.1 — incompatible).
+librosa==0.11.0
 noisereduce>=3.0.0
 pyloudnorm>=0.1.1
 demucs>=4.0.0
-# OpenVoice v2: neural voice cloning (cross-lingual tone-color conversion)
-# Extracts 256-d speaker embeddings and applies them via a flow-based converter.
-# Auto-downloads ~50 MB checkpoints from HuggingFace on first use.
-# NOT on PyPI — install from git:
-#   pip install git+https://github.com/myshell-ai/OpenVoice.git --no-deps
-# Then install dependencies manually (--no-deps avoids numpy/torch conflicts):
-#   pip install eng_to_ipa cn2an wavmark
-#   pip install faster-whisper whisper-timestamped
-# openvoice @ git+https://github.com/myshell-ai/OpenVoice.git
+# OpenVoice v2 — optional; install from git if needed (see comments in older docs).
 eng_to_ipa>=0.0.2
 cn2an>=0.5.22
 wavmark>=0.0.3
 faster-whisper>=1.0.0
 whisper-timestamped>=1.15.4
-# Chatterbox Multilingual TTS — synthesis + cross-lingual voice cloning in one model.
-# MIT license. Supports 23 languages + Apple Silicon MPS.
-# First run downloads ~1.5 GB multilingual checkpoint from HuggingFace.
-chatterbox-tts>=0.1.0
-# Resemble Enhance — professional speech denoising + bandwidth enhancement.
-# Same technology used by ElevenLabs and Resemble AI in commercial dubbing pipelines.
-# UNet denoiser + latent CFM enhancer trained at 44.1 kHz. Apache 2.0 license.
-resemble-enhance>=0.0.1
+# Pin 0.1.6: requires transformers==4.46.3. (0.1.7 requires transformers 5.2.)
+chatterbox-tts==0.1.6
+# Optional: resemble-enhance 0.0.1 pins librosa==0.10.1 — conflicts with chatterbox.
+# pip install resemble-enhance==0.0.1 --no-deps

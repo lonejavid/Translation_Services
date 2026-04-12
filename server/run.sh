@@ -16,12 +16,13 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   exit 1
 fi
 
-# Prefer Python 3.11+ so pip can resolve TTS / transformers / mlx-whisper without
-# Python 3.9-only pins (e.g. old SpaCy/thinc stacks).
-if command -v python3.12 >/dev/null 2>&1; then
-  PY=python3.12
-elif command -v python3.11 >/dev/null 2>&1; then
+# Coqui TTS needs Python <3.12. Prefer 3.11, then 3.10 / 3.9 (see server/requirements.txt).
+if command -v python3.11 >/dev/null 2>&1; then
   PY=python3.11
+elif command -v python3.10 >/dev/null 2>&1; then
+  PY=python3.10
+elif command -v python3.9 >/dev/null 2>&1; then
+  PY=python3.9
 else
   PY=python3
 fi
@@ -33,12 +34,15 @@ if [ ! -d "venv" ]; then
   pip install -r requirements.txt
 else
   source venv/bin/activate
+  # venv exists but deps missing (failed install or empty venv) — install now.
+  if ! python -c "import uvicorn" 2>/dev/null; then
+    echo "venv present but dependencies missing — running pip install -r requirements.txt …"
+    pip install --upgrade pip
+    pip install -r requirements.txt
+  fi
 fi
 
-# XTTS compatibility check skipped: Chatterbox requires transformers==5.2.0
-# which is incompatible with transformers==4.38.0 (XTTS requirement).
-# Chatterbox (Stage 0) handles voice cloning when a reference WAV is present.
-# Edge TTS (Stage 1) handles synthesis without a reference. XTTS is not needed.
+# See requirements.txt for transformers / chatterbox-tts pins.
 
 mkdir -p cache
 export PYTHONPATH="$SCRIPT_DIR"

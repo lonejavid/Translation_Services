@@ -7,7 +7,7 @@
     "client": "cd client && npm start",
     "server": "cd server && ./run.sh",
     "install-client": "cd client && npm install",
-    "install-server": "cd server && bash -c 'if command -v python3.12 >/dev/null 2>&1; then PY=python3.12; elif command -v python3.11 >/dev/null 2>&1; then PY=python3.11; else PY=python3; fi; [ ! -d venv ] && \"$PY\" -m venv venv; . venv/bin/activate && pip install -U pip && pip install -r requirements.txt'",
+    "install-server": "cd server && bash -c 'if command -v python3.11 >/dev/null 2>&1; then PY=python3.11; elif command -v python3.10 >/dev/null 2>&1; then PY=python3.10; elif command -v python3.9 >/dev/null 2>&1; then PY=python3.9; else PY=python3; fi; [ ! -d venv ] && \"$PY\" -m venv venv; . venv/bin/activate && pip install -U pip && pip install -r requirements.txt'",
     "install-all": "npm run install-client && npm run install-server"
   },
   "devDependencies": {
