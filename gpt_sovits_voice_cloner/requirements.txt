@@ -1,0 +1,15 @@
+# Minimal deps for this wrapper + resampling / validation.
+# You MUST also clone RVC-Boss/GPT-SoVITS and run its installer there:
+#   git clone https://github.com/RVC-Boss/GPT-SoVITS.git
+#   cd GPT-SoVITS && bash install.sh --device CU126 --source HF   # or CPU / MPS
+# Or: pip install -r GPT-SoVITS/requirements.txt (see upstream docs).
+
+torch>=2.2.0,<2.8.0
+torchaudio>=2.2.0,<2.8.0
+numpy>=1.24.0
+scipy>=1.10.0
+soundfile>=0.12.0
+librosa>=0.10.0
+pyyaml>=6.0
+huggingface_hub>=0.23.0
+requests>=2.28.0

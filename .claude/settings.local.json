@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source venv/bin/activate)",
+      "Bash(python -c \":*)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:www.resemble.ai)",
+      "Bash(ls /Users/tokenadmin/Desktop/Translation/server/cache/*xtts_ref*)",
+      "WebFetch(domain:www.sciencedirect.com)",
+      "WebFetch(domain:www.digitalocean.com)"
+    ]
+  }
+}
