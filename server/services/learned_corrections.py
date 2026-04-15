@@ -18,7 +18,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR = Path(
+    os.environ.get("CACHE_DIR") or (Path(__file__).resolve().parent.parent / "data")
+)
 _DATA_PATH = _DATA_DIR / "learned_corrections.json"
 
 _mtime_cache: float = 0.0

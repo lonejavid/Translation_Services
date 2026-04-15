@@ -1552,9 +1552,14 @@ def generate_dubbed_audio(
                     and _normalize_lang(target_language) == "hi"
                 ):
                     eff_ref = None
-                wav, sr = svc._synthesize_natural_with_pauses(
-                    cleaned, target_language, eff_ref
-                )
+                try:
+                    wav, sr = svc._synthesize_natural_with_pauses(
+                        cleaned, target_language, eff_ref
+                    )
+                except Exception as _xtts_exc:
+                    print(f"[TTS] Segment {i + 1}: XTTS/MMS failed ({_xtts_exc!r}); skipping.")
+                    wav = np.array([], dtype=np.float32)
+                    sr = 24000
 
             if wav.size == 0 and _normalize_lang(target_language) == "hi":
                 _hi_fb = (

@@ -10,6 +10,46 @@ SSE progress polled every ~300ms from in-memory job buffers.
 from __future__ import annotations
 
 import os
+import signal
+import sys
+
+# Ignore SIGPIPE so any write to a closed pipe returns EPIPE / raises
+# BrokenPipeError (caught by our handlers) rather than terminating the process.
+try:
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+except (AttributeError, OSError):
+    pass  # Windows has no SIGPIPE
+
+
+class _SafeStdout:
+    """Wrap sys.stdout so BrokenPipeError from print() is silently swallowed.
+
+    Many service functions call print() for progress logging.  If the Electron
+    parent process is slow to drain the pipe buffer, or the pipe is briefly
+    broken, an unguarded print() raises BrokenPipeError which propagates out
+    of the pipeline and appears as the error message in the UI.
+    """
+    def __init__(self, wrapped):
+        self._w = wrapped
+
+    def write(self, s):
+        try:
+            return self._w.write(s)
+        except (BrokenPipeError, OSError):
+            return 0
+
+    def flush(self):
+        try:
+            self._w.flush()
+        except (BrokenPipeError, OSError):
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._w, name)
+
+
+sys.stdout = _SafeStdout(sys.stdout)
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file automatically
@@ -26,6 +66,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 import shutil
 import threading
 import time
@@ -363,6 +404,9 @@ _PIPELINE_LOCKS_MAX = 256
 # cache_key -> job_id while a pipeline is running (so duplicate POSTs share one SSE stream).
 _inflight_job_by_cache: dict[str, str] = {}
 _inflight_job_lock = threading.Lock()
+
+# cache_key → export-job state for the async "download translated video" feature.
+_export_jobs: dict[str, dict] = {}  # {"status": "pending|running|done|error", "error": None, "title": "..."}
 
 
 def _pipeline_lock(cache_key: str) -> threading.Lock:
@@ -1007,11 +1051,15 @@ def _run_pipeline(
             )
             whisper_model = os.environ.get("WHISPER_MODEL_SIZE", "large-v3").strip() or "large-v3"
             stt_lang = os.environ.get("STT_LANGUAGE", "").strip() or None
-            segments, detected_lang = transcribe(
-                path_wav_clean,
-                model_size=whisper_model,
-                language=stt_lang,
-            )
+            try:
+                segments, detected_lang = transcribe(
+                    path_wav_clean,
+                    model_size=whisper_model,
+                    language=stt_lang,
+                )
+            except Exception as _stt_exc:
+                push(_error(f"Speech recognition failed: {_stt_exc}", code="stt_failed"))
+                return
             if not segments:
                 push({"error": "No speech detected"})
                 return
@@ -1148,16 +1196,20 @@ def _run_pipeline(
                 )
 
             xtts_ref_path = str((CACHE_DIR / f"{cache_key}_xtts_ref.wav").resolve())
-            written_dub, dub_sync = generate_dubbed_audio(
-                translated,
-                dub_path_arg,
-                target_language,
-                video_duration=duration,
-                progress_callback=tts_progress,
-                speaker_ref_wav=xtts_ref_path,
-                speaker_gender=speaker_gender,
-                speaker_gender_meta=gender_meta,
-            )
+            try:
+                written_dub, dub_sync = generate_dubbed_audio(
+                    translated,
+                    dub_path_arg,
+                    target_language,
+                    video_duration=duration,
+                    progress_callback=tts_progress,
+                    speaker_ref_wav=xtts_ref_path,
+                    speaker_gender=speaker_gender,
+                    speaker_gender_meta=gender_meta,
+                )
+            except Exception as _tts_exc:
+                push(_error(f"Audio generation failed: {_tts_exc}", code="tts_failed"))
+                return
 
             # BGM mix: blend dubbed voice with original background music/ambience.
             # This is the Netflix-standard final step — voice is replaced, BGM stays.
@@ -2090,6 +2142,204 @@ async def export_video(cache_key: str, background_tasks=None):
         headers={
             "Content-Disposition": f'attachment; filename="dubbed_{meta.get("title", ck)[:60]}.mp4"',
         },
+    )
+
+
+def _run_export_sync(ck: str) -> None:
+    """
+    Blocking worker: download source video (video-only stream) via yt-dlp,
+    merge with the dubbed MP3 via ffmpeg, write {ck}_dubbed.mp4 to CACHE_DIR.
+    Updates _export_jobs[ck] in place.
+    """
+    import subprocess as _sp
+    import yt_dlp as _ytdlp
+    from services.downloader import _find_ffmpeg, _QuietLogger, _cookie_opts
+
+    try:
+        _export_jobs[ck]["status"] = "running"
+
+        dub_path = _dub_output_disk_path(ck)
+        meta_path = CACHE_DIR / f"{ck}_meta.json"
+        output_mp4 = CACHE_DIR / f"{ck}_dubbed.mp4"
+
+        meta = json.loads(meta_path.read_text("utf-8"))
+        youtube_url = meta.get("youtube_url") or meta.get("url") or ""
+        title = meta.get("title") or ck
+
+        if not youtube_url:
+            raise RuntimeError("YouTube URL not stored in metadata — re-process the video to fix this.")
+
+        ffmpeg_bin = _find_ffmpeg()
+        if not ffmpeg_bin:
+            raise RuntimeError("ffmpeg not found. Install with: brew install ffmpeg")
+
+        # ── Step 1: download video-only stream ──────────────────────────────
+        tmp_base = str(CACHE_DIR / f"{ck}_source_video")
+        raw_video: str | None = None
+
+        # Re-use an already-downloaded source if present
+        for _ext in ("mp4", "mkv", "webm"):
+            _c = f"{tmp_base}.{_ext}"
+            if os.path.isfile(_c) and os.path.getsize(_c) > 10240:
+                raw_video = _c
+                break
+
+        if not raw_video:
+            cookie_opts = _cookie_opts()
+            ydl_base: dict = {
+                "format": "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/bestvideo",
+                "outtmpl": tmp_base + ".%(ext)s",
+                "quiet": True,
+                "no_warnings": True,
+                "logger": _QuietLogger(),
+                "ffmpeg_location": os.path.dirname(ffmpeg_bin),
+            }
+            for _clients, _cookies in [
+                (["web"], True), (["web_embedded"], True), (["ios"], True),
+                (None, True), (["ios"], False), (None, False),
+            ]:
+                _opts = {**ydl_base}
+                if _cookies and cookie_opts:
+                    _opts.update(cookie_opts)
+                if _clients:
+                    _opts["extractor_args"] = {"youtube": {"player_client": _clients}}
+                try:
+                    with _ytdlp.YoutubeDL(_opts) as _ydl:
+                        _ydl.extract_info(youtube_url, download=True)
+                    for _ext in ("mp4", "mkv", "webm"):
+                        _c = f"{tmp_base}.{_ext}"
+                        if os.path.isfile(_c) and os.path.getsize(_c) > 10240:
+                            raw_video = _c
+                            break
+                    if raw_video:
+                        break
+                except Exception as _e:
+                    logger.warning(f"[export] video download attempt failed: {_e}")
+                    continue
+
+        if not raw_video:
+            raise RuntimeError(
+                "Could not download the video stream from YouTube.\n"
+                "Make sure you are logged into YouTube in Safari and relaunch the app."
+            )
+
+        # ── Step 2: merge video + dubbed audio ───────────────────────────────
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-i", raw_video,
+            "-i", str(dub_path),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            "-movflags", "+faststart",
+            str(output_mp4),
+        ]
+        res = _sp.run(cmd, capture_output=True, timeout=600)
+
+        # Remove raw video to save disk space
+        try:
+            os.remove(raw_video)
+        except OSError:
+            pass
+
+        if res.returncode != 0 or not output_mp4.is_file() or output_mp4.stat().st_size < 10240:
+            err_snippet = res.stderr.decode("utf-8", errors="replace")[-400:]
+            raise RuntimeError(f"ffmpeg merge failed: {err_snippet}")
+
+        size_mb = output_mp4.stat().st_size // 1024 // 1024
+        logger.info(f"[export] {ck}: dubbed video ready — {size_mb} MB")
+        _export_jobs[ck].update({"status": "done", "title": title})
+
+    except Exception as exc:
+        logger.error(f"[export] {ck} failed: {exc}")
+        _export_jobs[ck].update({"status": "error", "error": str(exc)})
+
+
+@app.post("/api/export/{cache_key}/video")
+async def start_export_video(cache_key: str):
+    """
+    Start an async export job: download original video + merge with dubbed audio.
+    Returns {"status": "done"} immediately if already cached, otherwise {"status": "pending"}.
+    """
+    ck = cache_key.lower().strip()
+    if not _valid_cache_key_hex(ck):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    dub_path = _dub_output_disk_path(ck)
+    if not dub_path.is_file():
+        raise HTTPException(status_code=404, detail="Dubbed audio not found — process the video first.")
+
+    meta_path = CACHE_DIR / f"{ck}_meta.json"
+    if not meta_path.is_file():
+        raise HTTPException(status_code=404, detail="Metadata not found — process the video first.")
+
+    output_mp4 = CACHE_DIR / f"{ck}_dubbed.mp4"
+
+    # Already exported and still fresh (not older than the dub file)?
+    if output_mp4.is_file() and output_mp4.stat().st_mtime >= dub_path.stat().st_mtime:
+        return {"status": "done", "cache_key": ck}
+
+    # Already running?
+    existing = _export_jobs.get(ck, {})
+    if existing.get("status") in ("pending", "running"):
+        return {"status": existing["status"], "cache_key": ck}
+
+    # Kick off background thread
+    _export_jobs[ck] = {"status": "pending", "error": None, "title": None}
+    asyncio.create_task(asyncio.to_thread(_run_export_sync, ck))
+    return {"status": "pending", "cache_key": ck}
+
+
+@app.get("/api/export/{cache_key}/video-status")
+async def get_export_video_status(cache_key: str):
+    """Poll the export job status. Returns {status: pending|running|done|error, error?}."""
+    ck = cache_key.lower().strip()
+    if not _valid_cache_key_hex(ck):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    output_mp4 = CACHE_DIR / f"{ck}_dubbed.mp4"
+    dub_path = _dub_output_disk_path(ck)
+    if (
+        output_mp4.is_file()
+        and dub_path.is_file()
+        and output_mp4.stat().st_mtime >= dub_path.stat().st_mtime
+    ):
+        return {"status": "done", "cache_key": ck}
+
+    job = _export_jobs.get(ck)
+    if not job:
+        return {"status": "idle"}
+    return {"status": job["status"], "error": job.get("error"), "cache_key": ck}
+
+
+@app.get("/api/export/{cache_key}/video-file")
+async def download_export_video_file(cache_key: str):
+    """Serve the exported dubbed MP4 as a browser download."""
+    ck = cache_key.lower().strip()
+    if not _valid_cache_key_hex(ck):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    output_mp4 = CACHE_DIR / f"{ck}_dubbed.mp4"
+    if not output_mp4.is_file():
+        raise HTTPException(status_code=404, detail="Export not ready — start the export first.")
+
+    meta_path = CACHE_DIR / f"{ck}_meta.json"
+    title = ck
+    if meta_path.is_file():
+        try:
+            title = json.loads(meta_path.read_text("utf-8")).get("title") or ck
+        except Exception:
+            pass
+
+    safe_title = re.sub(r'[^\w\s\-]', '', title).strip()[:60] or "dubbed-video"
+    filename = f"{safe_title} (dubbed).mp4"
+    return FileResponse(
+        str(output_mp4),
+        media_type="video/mp4",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

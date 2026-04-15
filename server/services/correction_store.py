@@ -17,13 +17,16 @@ One JSON array of correction objects (append-only, deduplicated by segment).
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR = Path(
+    os.environ.get("CACHE_DIR") or (Path(__file__).resolve().parent.parent / "data")
+)
 _DATA_PATH = _DATA_DIR / "translation_corrections.json"
 _lock = threading.RLock()
 

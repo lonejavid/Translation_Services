@@ -27,13 +27,20 @@ else
   PY=python3
 fi
 
-if [ ! -d "venv" ]; then
-  "$PY" -m venv venv
-  source venv/bin/activate
+# When launched from the Electron app, VENV_DIR and CACHE_DIR are set to
+# ~/Library/Application Support/Video Translator/{venv,cache} so the venv
+# survives updates and is writable even when the .app is in /Applications.
+# In dev mode (npm run server), these fall back to the local server/ directory.
+VENV_DIR="${VENV_DIR:-$SCRIPT_DIR/venv}"
+CACHE_DIR="${CACHE_DIR:-$SCRIPT_DIR/cache}"
+
+if [ ! -d "$VENV_DIR" ]; then
+  "$PY" -m venv "$VENV_DIR"
+  source "$VENV_DIR/bin/activate"
   pip install --upgrade pip
   pip install -r requirements.txt
 else
-  source venv/bin/activate
+  source "$VENV_DIR/bin/activate"
   # venv exists but deps missing (failed install or empty venv) — install now.
   if ! python -c "import uvicorn" 2>/dev/null; then
     echo "venv present but dependencies missing — running pip install -r requirements.txt …"
@@ -44,8 +51,9 @@ fi
 
 # See requirements.txt for transformers / chatterbox-tts pins.
 
-mkdir -p cache
+mkdir -p "$CACHE_DIR"
 export PYTHONPATH="$SCRIPT_DIR"
+export CACHE_DIR="$CACHE_DIR"
 
 # Coqui XTTS v2 opens an interactive CPML license prompt unless this is set.
 # By using the app with XTTS you must follow https://coqui.ai/cpml (non-commercial)
@@ -72,54 +80,44 @@ export CLONE_TOP_P="${CLONE_TOP_P:-0.85}"
 #   0.6 = light tint — if the original voice sounds over-processed, increase this
 #
 # Auto-downloads ~50 MB checkpoints from HuggingFace on first run.
-export OPENVOICE_ENABLED="${OPENVOICE_ENABLED:-1}"
-# TAU=0.30: balanced — clear natural speech + recognisable speaker identity.
-# 0.15 was too aggressive and caused robotic/metallic artifacts in the output.
+# ── CLARITY MODE: maximum intelligibility ─────────────────────────────────────
+# All voice-conversion steps (OpenVoice, Chatterbox, primitive pitch-shift,
+# phase-vocoder time-stretch) are disabled so users hear clean Microsoft Neural
+# TTS directly.  The dubbed voice will not match the original speaker's timbre,
+# but every word will be crystal-clear with no robotic / metallic artifacts.
+#
+# To re-enable speaker voice matching at the cost of some clarity, set:
+#   OPENVOICE_ENABLED=1  VOICE_CONVERT_ENABLED=1  TTS_SYNC_STRETCH=1
+# in your .env file.
+
+# OpenVoice v2 voice-timbre conversion — OFF for clarity.
+# When enabled it applies a neural tone-color conversion on top of Edge TTS,
+# which can introduce metallic / robotic artifacts.
+export OPENVOICE_ENABLED="${OPENVOICE_ENABLED:-0}"
 export OPENVOICE_TAU="${OPENVOICE_TAU:-0.30}"
-# 8 chunks × 6s each from the 60s reference = very stable averaged embedding
 export OPENVOICE_N_CHUNKS="${OPENVOICE_N_CHUNKS:-8}"
 export OPENVOICE_CHUNK_SEC="${OPENVOICE_CHUNK_SEC:-6.0}"
 
-# ── Chatterbox Multilingual TTS (optional first pass for dubbing) ─────────────
-# By default the dub pipeline uses Edge neural TTS first (clearest speech), then
-# OpenVoice for timbre. Chatterbox is a single-pass alternative when enabled below.
-# Architecture: flow-matching (Resemble AI, 0.5B params, MIT license, 23 languages)
-# Download: ~1.5 GB from HuggingFace on first run.
-#
-# TTS_CHATTERBOX_FIRST=0    : DEFAULT — Edge TTS first, then OpenVoice (easiest to understand)
-# TTS_CHATTERBOX_FIRST=1    : try Chatterbox before Edge when a reference WAV exists
+# Chatterbox flow-matching TTS — OFF.  Produces less intelligible output than
+# Edge TTS, especially for translated (non-native) text.
+export CHATTERBOX_ENABLED="${CHATTERBOX_ENABLED:-0}"
 export TTS_CHATTERBOX_FIRST="${TTS_CHATTERBOX_FIRST:-0}"
-# TTS_CLARITY_MODE=1 (default): keep Microsoft Edge speech crystal-clear — skip OpenVoice /
-# pitch-tilt conversion on Edge segments (those steps trade intelligibility for timbre match).
-# TTS_CLARITY_MODE=0: run OpenVoice on Edge audio again for closer speaker match (less clear).
-# With clarity on, TTS_SYNC_STRETCH defaults to 0 (no phase-vocoder fit-to-slot); set
-# TTS_SYNC_STRETCH=1 explicitly to re-enable stretching while keeping clarity elsewhere.
-export TTS_CLARITY_MODE="${TTS_CLARITY_MODE:-1}"
-# Speaker gender (pitch on voice reference): GENDER_CONFIDENCE_THRESHOLD (default 0.55),
-# GENDER_USE_RAW_FOR_EDGE=1 uses raw male/female for Edge voice when gate → unknown.
-# GENDER_F0_MALE_FLOOR_OVERRIDE=1 (default): male speakers mis-read as female when median F0
-# is high but pitch floor (p25) is still low — set 0 to disable.
-#
-# STT: STT_SCRIPT_LANG_FIX=1 (default) — if Whisper says Urdu/Pashto/Sindhi but the transcript
-# is almost all Roman letters (no Arabic script), treat source as English (common bug).
-#
-# CHATTERBOX_ENABLED=1      : allow Chatterbox when TTS_CHATTERBOX_FIRST=1 (or warmup)
-#                             set 0 to never load/use Chatterbox
-# CHATTERBOX_CFG_WEIGHT=0.0 : KEEP AT 0.0 for cross-lingual cloning
-#                             higher values pull output toward reference language phonology
-# CHATTERBOX_EXAGGERATION   : 0.0 = flat, ~0.52 = natural, 1.0 = expressive
-# CHATTERBOX_TEMPERATURE    : ~0.72 = balanced; lower = more stable, higher = more varied
-# CHATTERBOX_ENGLISH_ONLY=1 : legacy — use Chatterbox only when target language is en
-# CHATTERBOX_REF_RMS_MATCH  : 1 (default) gently match segment loudness to reference WAV
-# CHATTERBOX_CHUNK_GAP_MS   : silence between long-text chunks (default 80)
-export CHATTERBOX_ENABLED="${CHATTERBOX_ENABLED:-1}"
 export CHATTERBOX_CFG_WEIGHT="${CHATTERBOX_CFG_WEIGHT:-0.0}"
 export CHATTERBOX_EXAGGERATION="${CHATTERBOX_EXAGGERATION:-0.52}"
 export CHATTERBOX_TEMPERATURE="${CHATTERBOX_TEMPERATURE:-0.72}"
 
-# Voice conversion FALLBACK (used only when OpenVoice is not installed):
-# primitive pitch-shift + spectral tilt matching.
-export VOICE_CONVERT_ENABLED="${VOICE_CONVERT_ENABLED:-1}"
+# Clarity mode ON — Edge TTS output is never post-processed by OpenVoice or
+# primitive voice conversion.  This is the single biggest clarity lever.
+export TTS_CLARITY_MODE="${TTS_CLARITY_MODE:-1}"
+
+# Phase-vocoder time-stretch — OFF.  Fitting dubbed clips to subtitle slots
+# via librosa causes muffled / robotic sound on translated speech.
+# Segments play at their natural Edge TTS length instead.
+export TTS_SYNC_STRETCH="${TTS_SYNC_STRETCH:-0}"
+
+# Primitive pitch-shift + spectral tilt fallback — OFF.
+# Only used when OpenVoice is unavailable; also degrades clarity.
+export VOICE_CONVERT_ENABLED="${VOICE_CONVERT_ENABLED:-0}"
 export VOICE_CONVERT_PITCH_STRENGTH="${VOICE_CONVERT_PITCH_STRENGTH:-0.75}"
 export VOICE_CONVERT_MAX_SEMITONES="${VOICE_CONVERT_MAX_SEMITONES:-5.0}"
 export VOICE_CONVERT_TILT_STRENGTH="${VOICE_CONVERT_TILT_STRENGTH:-0.35}"

@@ -87,16 +87,23 @@ let _ytApiReady = false;
 let _ytCallbacks = [];
 
 function loadYTApi(cb) {
-  if (_ytApiReady) { cb(); return; }
+  // If window.YT.Player already exists (e.g. loaded by VideoPlayer on a prior
+  // route) we can call the callback immediately without waiting for the script.
+  if (_ytApiReady || window.YT?.Player) {
+    _ytApiReady = true;
+    cb();
+    return;
+  }
   _ytCallbacks.push(cb);
-  if (document.getElementById("yt-iframe-api")) return;
+  // Only inject the script once (guard by element id).
+  if (document.getElementById("yt-iframe-api-te")) return;
   window.onYouTubeIframeAPIReady = () => {
     _ytApiReady = true;
     _ytCallbacks.forEach((fn) => fn());
     _ytCallbacks = [];
   };
   const tag = document.createElement("script");
-  tag.id = "yt-iframe-api";
+  tag.id = "yt-iframe-api-te";
   tag.src = "https://www.youtube.com/iframe_api";
   document.head.appendChild(tag);
 }
@@ -139,6 +146,7 @@ export default function TranslationEditor() {
   const [activeIdx, setActiveIdx]   = useState(0);
   const [isPlaying, setIsPlaying]   = useState(false);
   const [videoEnded, setVideoEnded] = useState(false);
+  const [embedBlocked, setEmbedBlocked] = useState(false);
   // "original" → YouTube audio on  |  "translated" → YouTube muted, dubbed MP3 plays
   const [playMode, setPlayMode] = useState("original");
 
@@ -157,6 +165,7 @@ export default function TranslationEditor() {
   const playModeRef        = useRef("original");
   const dubSyncRef         = useRef([]);
   const autoStopRef        = useRef(null);   // stop playback at this time (segment preview)
+  const autoPlayAfterRedubRef = useRef(false); // set true before dubBust increment → auto-play Translated
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const seg = segments[activeIdx] || null;
@@ -181,6 +190,28 @@ export default function TranslationEditor() {
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
   useEffect(() => { playModeRef.current = playMode; }, [playMode]);
   useEffect(() => { dubSyncRef.current = dubSync; }, [dubSync]);
+
+  // After a successful re-dub, auto-switch to Translated mode and start playing
+  useEffect(() => {
+    if (!autoPlayAfterRedubRef.current) return;
+    if (!dubbedAudioUrl) return;
+    autoPlayAfterRedubRef.current = false;
+    // Small delay so the new <audio> element (re-keyed by dubBust) has mounted
+    const t = setTimeout(() => {
+      const audio = audioRef.current;
+      const player = playerRef.current;
+      setPlayMode("translated");
+      player?.mute?.();
+      player?.seekTo?.(0, true);
+      player?.playVideo?.();
+      if (audio) {
+        const tryPlay = () => { audio.currentTime = 0; audio.play().catch(() => {}); };
+        if (audio.readyState >= 2) tryPlay();
+        else audio.addEventListener("canplay", tryPlay, { once: true });
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [dubBust, dubbedAudioUrl]);
 
   // Dubbed file URL: query param from Player, or default cache path (same basename the pipeline uses).
   useEffect(() => {
@@ -243,14 +274,27 @@ export default function TranslationEditor() {
 
   useEffect(() => {
     if (!videoId) return;
+    setEmbedBlocked(false);
     loadYTApi(() => {
       if (!playerContainerRef.current || playerRef.current) return;
       playerRef.current = new window.YT.Player(playerContainerRef.current, {
         videoId,
         width: "100%",
         height: "100%",
-        playerVars: { rel: 0, modestbranding: 1 },
+        playerVars: {
+          autoplay: 0,
+          mute: 0,
+          controls: 1,
+          rel: 0,
+          // Required for YouTube IFrame API when served from a local HTTP
+          // server — without this the embed is rejected with error 153.
+          origin: window.location.origin,
+        },
         events: {
+          onError: (e) => {
+            // 101 / 150: embedding disabled by the video owner
+            if (e.data === 101 || e.data === 150) setEmbedBlocked(true);
+          },
           onReady: () => startPolling(),
           onStateChange: (e) => {
             const playing = e.data === 1;
@@ -271,7 +315,7 @@ export default function TranslationEditor() {
         playerRef.current = null;
       }
     };
-  }, [videoId]);
+  }, [videoId]); // startPolling is useCallback([]) — stable ref, no need in deps
 
   // ── Polling: segment tracking + audio sync + auto-stop ───────────────────
 
@@ -522,6 +566,7 @@ export default function TranslationEditor() {
       }
       if (data.audio_url) setDubRelPath(data.audio_url);
       if (Array.isArray(data.dub_sync)) setDubSync(data.dub_sync);
+      autoPlayAfterRedubRef.current = true;
       setDubBust((b) => b + 1);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus(null), 5000);
@@ -617,10 +662,22 @@ export default function TranslationEditor() {
 
           {/* Video iframe */}
           <div className="te-video-frame">
-            {videoId
-              ? <div className="te-video-inner" ref={playerContainerRef} />
-              : <div className="te-no-video"><p>No video URL provided.</p></div>
-            }
+            {!videoId ? (
+              <div className="te-no-video"><p>No video URL provided.</p></div>
+            ) : embedBlocked ? (
+              <div className="te-no-video">
+                <p>This video cannot be embedded.</p>
+                <a
+                  href={`https://www.youtube.com/watch?v=${videoId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Watch on YouTube ↗
+                </a>
+              </div>
+            ) : (
+              <div className="te-video-inner" ref={playerContainerRef} />
+            )}
           </div>
 
           {/* ── Audio mode switcher ── */}
@@ -804,7 +861,7 @@ export default function TranslationEditor() {
             )}
             {saveStatus === "saved" && (
               <p className="te-save-ok">
-                Subtitles and dubbed audio are updated. Switch to <strong>Translated</strong> and press Play to hear your corrections.
+                ✓ Done — playing your corrected dubbed audio now.
               </p>
             )}
             {saveStatus === "warn" && saveDetail && (

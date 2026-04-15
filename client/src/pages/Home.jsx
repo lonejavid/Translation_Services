@@ -4,16 +4,30 @@ import LanguageSelector from "../components/LanguageSelector";
 import { API_BASE } from "../App";
 
 const RECENT_KEY = "youtube-translator-recent-v2";
+const HOME_FORM_KEY = "yt-home-form";
 const MAX_RECENT = 5;
 
 function Home() {
-  const [url, setUrl] = useState("");
-  const [language, setLanguage] = useState("en");
+  const [url, setUrl] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(HOME_FORM_KEY) || "{}").url || ""; }
+    catch (_) { return ""; }
+  });
+  const [language, setLanguage] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(HOME_FORM_KEY) || "{}").language || "en"; }
+    catch (_) { return "en"; }
+  });
   const [includeTranscripts, setIncludeTranscripts] = useState(false);
   const [languages, setLanguages] = useState([]);
   const [recent, setRecent] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  // Persist URL + language whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(HOME_FORM_KEY, JSON.stringify({ url, language }));
+    } catch (_) {}
+  }, [url, language]);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/languages`)
@@ -28,7 +42,7 @@ function Home() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) setRecent(parsed);
-        else localStorage.removeItem(RECENT_KEY); // stale / corrupted
+        else localStorage.removeItem(RECENT_KEY);
       }
     } catch (_) {
       localStorage.removeItem(RECENT_KEY);
@@ -53,6 +67,13 @@ function Home() {
     navigate(`/player?${q.toString()}`);
   };
 
+  const handleClear = () => {
+    setUrl("");
+    setLanguage("en");
+    setIncludeTranscripts(false);
+    try { localStorage.removeItem(HOME_FORM_KEY); } catch (_) {}
+  };
+
   const langName = (code) => languages.find((l) => l.code === code)?.name || code;
 
   return (
@@ -71,15 +92,28 @@ function Home() {
           <label className="yt-label" htmlFor="yt-url-input">
             YouTube URL
           </label>
-          <input
-            id="yt-url-input"
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste YouTube URL here…"
-            className="yt-input"
-            required
-          />
+          <div className="yt-input-row">
+            <input
+              id="yt-url-input"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Paste YouTube URL here…"
+              className="yt-input"
+              required
+            />
+            {url && (
+              <button
+                type="button"
+                className="yt-input-clear"
+                onClick={handleClear}
+                title="Clear form"
+                aria-label="Clear URL"
+              >
+                ✕
+              </button>
+            )}
+          </div>
 
           <label className="yt-label yt-label-spaced" htmlFor="yt-lang-select">
             Target language

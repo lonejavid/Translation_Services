@@ -246,17 +246,8 @@ async def _save_mp3_async(text: str, voice: str, mp3_path: str) -> None:
     await comm.save(mp3_path)
 
 
-def synthesize_hindi_to_numpy(text: str, voice: str, work_dir: str) -> tuple[np.ndarray, int]:
-    """
-    Synthesize Hindi (or any Edge-supported voice) to mono float32 PCM + sample rate.
-    Full natural length — no speed change, trim, or pad.
-    """
-    text = (text or "").strip()
-    if not text:
-        return np.array([], dtype=np.float32), 24000
-
-    Path(work_dir).mkdir(parents=True, exist_ok=True)
-    mp3_path = str(Path(work_dir) / f"edge_{uuid.uuid4().hex}.mp3")
+def _edge_tts_synthesize_once(text: str, voice: str, mp3_path: str) -> tuple[np.ndarray, int]:
+    """Single synthesis attempt; cleans up mp3_path regardless of outcome."""
     try:
         _run_async(_save_mp3_async(text, voice, mp3_path))
         if not Path(mp3_path).is_file() or Path(mp3_path).stat().st_size < 64:
@@ -267,10 +258,39 @@ def synthesize_hindi_to_numpy(text: str, voice: str, work_dir: str) -> tuple[np.
         sw = audio.sample_width
         arr = np.array(audio.get_array_of_samples(), dtype=np.float32)
         maxv = float(2 ** (8 * sw - 1))
-        wav = (arr / maxv).astype(np.float32)
-        return wav, sr
+        return (arr / maxv).astype(np.float32), sr
     finally:
         Path(mp3_path).unlink(missing_ok=True)
+
+
+def synthesize_hindi_to_numpy(text: str, voice: str, work_dir: str) -> tuple[np.ndarray, int]:
+    """
+    Synthesize Hindi (or any Edge-supported voice) to mono float32 PCM + sample rate.
+    Full natural length — no speed change, trim, or pad.
+
+    Retries once on transient network errors (BrokenPipeError, OSError) that
+    can occur when the Microsoft Edge TTS WebSocket is reset mid-stream.
+    """
+    text = (text or "").strip()
+    if not text:
+        return np.array([], dtype=np.float32), 24000
+
+    Path(work_dir).mkdir(parents=True, exist_ok=True)
+
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        mp3_path = str(Path(work_dir) / f"edge_{uuid.uuid4().hex}.mp3")
+        try:
+            return _edge_tts_synthesize_once(text, voice, mp3_path)
+        except (BrokenPipeError, ConnectionError, OSError) as exc:
+            last_exc = exc
+            if attempt == 0:
+                print(f"[edge-tts] network error, retrying: {exc}")
+                import time as _time
+                _time.sleep(1.5)
+        # non-network exceptions propagate immediately (no retry)
+
+    raise last_exc or RuntimeError("edge-tts synthesis failed after retries")
 
 
 def synthesize_hindi_for_subtitle_slot(

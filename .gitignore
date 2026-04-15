@@ -17,9 +17,10 @@ venv/
 .eggs/
 dist/
 build/
-
+node_modules
 # Server cache & generated media
 server/cache/
+server/node_modules
 *.wav
 *.pid
 nohup*.log

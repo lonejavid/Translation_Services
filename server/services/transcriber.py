@@ -218,6 +218,56 @@ def _clean_transcript_text(text: str) -> str:
     return text.strip()
 
 
+def _transcribe_faster_whisper(
+    path_wav: str,
+    model_size: str = "large-v3",
+    language: str | None = None,
+    progress_callback: Optional[Callable[[str], None]] = None,
+) -> tuple[list[dict], str]:
+    """Fallback transcription using faster-whisper (Python 3.9 compatible)."""
+    from faster_whisper import WhisperModel
+
+    fw_model = model_size if model_size in ("tiny", "base", "small", "medium", "large-v2", "large-v3") else "large-v3"
+    device = "cpu"
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            device = "cpu"  # faster-whisper uses CTranslate2 which doesn't support MPS
+    except Exception:
+        pass
+
+    progress_callback and progress_callback("loading_whisper")
+    print(f"[STT] faster-whisper model: {fw_model} (mlx-whisper unavailable on Python 3.9)")
+    model = WhisperModel(fw_model, device=device, compute_type="int8")
+
+    progress_callback and progress_callback("transcribing")
+    fw_segments, info = model.transcribe(
+        path_wav,
+        language=language,
+        beam_size=5,
+        word_timestamps=True,
+        vad_filter=True,
+    )
+
+    detected_lang = info.language or (language or "en")
+    segments: list[dict] = []
+    for seg in fw_segments:
+        words = [{"word": w.word, "start": w.start, "end": w.end, "probability": w.probability}
+                 for w in (seg.words or [])]
+        segments.append({
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text.strip(),
+            "words": words,
+            "avg_logprob": seg.avg_logprob,
+            "no_speech_prob": seg.no_speech_prob,
+            "compression_ratio": seg.compression_ratio,
+        })
+
+    segments = [s for s in segments if s["text"]]
+    return segments, detected_lang
+
+
 def transcribe(
     path_wav: str,
     model_size: str = "large-v3",
@@ -225,7 +275,7 @@ def transcribe(
     progress_callback: Optional[Callable[[str], None]] = None,
 ) -> tuple[list[dict], str]:
     """
-    Transcribe with mlx-whisper (Metal on Apple Silicon).
+    Transcribe with mlx-whisper (Metal on Apple Silicon) or faster-whisper fallback.
 
     Returns:
         (segments, detected_language_code)
@@ -233,7 +283,9 @@ def transcribe(
                   optional segment-level avg_logprob, no_speech_prob, compression_ratio, temperature
     """
     if mlx_whisper is None:
-        raise RuntimeError("Install mlx-whisper: pip install mlx-whisper")
+        # mlx-whisper unavailable (requires Python >=3.10 via mlx).
+        # Fall back to faster-whisper which works on Python 3.9+.
+        return _transcribe_faster_whisper(path_wav, model_size, language, progress_callback)
 
     repo = _mlx_hf_repo(model_size)
     progress_callback and progress_callback("loading_whisper")

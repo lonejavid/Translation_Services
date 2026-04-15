@@ -1,16 +1,66 @@
 {
-  "name": "youtube-video-translator",
+  "name": "video-translator",
   "version": "1.0.0",
+  "description": "AI-powered video dubbing desktop app for Mac",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"cd server && ./run.sh\" \"cd client && npm start\"",
     "client": "cd client && npm start",
     "server": "cd server && ./run.sh",
     "install-client": "cd client && npm install",
-    "install-server": "cd server && bash -c 'if command -v python3.11 >/dev/null 2>&1; then PY=python3.11; elif command -v python3.10 >/dev/null 2>&1; then PY=python3.10; elif command -v python3.9 >/dev/null 2>&1; then PY=python3.9; else PY=python3; fi; [ ! -d venv ] && \"$PY\" -m venv venv; . venv/bin/activate && pip install -U pip && pip install -r requirements.txt'",
-    "install-all": "npm run install-client && npm run install-server"
+    "install-server": "cd server && bash -c 'if command -v python3.11 >/dev/null 2>&1; then PY=python3.11; elif command -v python3.10 >/dev/null 2>&1; then PY=python3.10; else PY=python3; fi; [ ! -d venv ] && \"$PY\" -m venv venv; . venv/bin/activate && pip install -U pip && pip install -r requirements.txt'",
+    "install-all": "npm run install-client && npm run install-server && npm install",
+    "build-client": "cd client && npm run build",
+    "electron": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "electron-dev": "concurrently \"cd server && ./run.sh\" \"wait-on http://127.0.0.1:8000/health && env -u ELECTRON_RUN_AS_NODE electron .\"",
+    "dist": "npm run build-client && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --arm64",
+    "dist-x64": "npm run build-client && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --x64"
   },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^8.2.0",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.9.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.videotranslator.app",
+    "productName": "Video Translator",
+    "copyright": "Copyright © 2025",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "electron/assets/icon.icns",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Video Translator",
+      "background": null,
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "files": [
+      "electron/**/*",
+      "client/build/**/*",
+      "server/**/*",
+      "!server/venv/**/*",
+      "!server/cache/**/*",
+      "!server/__pycache__/**/*",
+      "!server/**/__pycache__/**/*",
+      "!**/*.pyc",
+      "!**/.git/**/*"
+    ],
+    "extraResources": [],
+    "asar": false
   }
 }
