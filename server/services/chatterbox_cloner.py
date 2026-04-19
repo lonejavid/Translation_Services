@@ -98,13 +98,15 @@ def use_chatterbox_for_target(target_lang: str) -> bool:
 
 
 def _exaggeration() -> float:
+    # 0.65 — more natural prosody and emotion, closer to the original speaker's delivery
     try:
-        return max(0.0, min(1.0, float(os.environ.get("CHATTERBOX_EXAGGERATION", "0.52"))))
+        return max(0.0, min(1.0, float(os.environ.get("CHATTERBOX_EXAGGERATION", "0.65"))))
     except ValueError:
-        return 0.52
+        return 0.65
 
 
 def _cfg_weight() -> float:
+    # 0.0 — critical for cross-lingual cloning; higher values pull output toward reference language
     try:
         return max(0.0, min(1.0, float(os.environ.get("CHATTERBOX_CFG_WEIGHT", "0.0"))))
     except ValueError:
@@ -112,10 +114,11 @@ def _cfg_weight() -> float:
 
 
 def _temperature() -> float:
+    # 0.55 — lower = more stable and speaker-faithful; 0.72 was too high (drift from reference)
     try:
-        return max(0.4, min(1.5, float(os.environ.get("CHATTERBOX_TEMPERATURE", "0.72"))))
+        return max(0.4, min(1.5, float(os.environ.get("CHATTERBOX_TEMPERATURE", "0.55"))))
     except ValueError:
-        return 0.72
+        return 0.55
 
 
 def _chunk_chars() -> int:

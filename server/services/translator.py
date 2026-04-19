@@ -21,6 +21,8 @@ import os
 import re
 from typing import Callable, Optional
 
+from services.llm_validator import validate_and_improve as _llm_validate
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1118,6 +1120,17 @@ class Translator:
                 if tgt == "hi" and tt:
                     self._recent_context.append(tt.strip())
                     self._recent_context = self._recent_context[-2:]
+
+                # LLM correction — uses source as ground truth to fix machine translation
+                if tt and src_t:
+                    tt = _llm_validate(
+                        src_t,
+                        tt,
+                        retranslate_fn=lambda t: self.translate(t, tgt),
+                        source_lang=src,
+                        target_lang=tgt,
+                    )
+
                 out.append({
                     "start": seg["start"],
                     "end": seg["end"],
@@ -1194,6 +1207,75 @@ class Translator:
                     progress_callback(i + 1, total)
                 i += 1
                 continue
+
+            # Code-switching check: segment may mix source language with target-script words
+            if use_indic:
+                try:
+                    from services.code_switch_handler import (
+                        detect_code_switching,
+                        translate_with_code_switch_handling,
+                    )
+                    cs_info = detect_code_switching(text, src, tgt)
+                    if cs_info["is_already_target"]:
+                        # Already in the target language — flush batch, emit as-is
+                        flush_batch()
+                        emo_cs = detect_emotion(text) if tgt == "hi" else "casual"
+                        out.append({
+                            "start": seg["start"],
+                            "end": seg["end"],
+                            "text": text,
+                            "translated_text": text,
+                            **({"dub_emotion": emo_cs} if tgt == "hi" else {}),
+                            **_passthrough_stt_fields(seg),
+                        })
+                        if progress_callback:
+                            progress_callback(i + 1, total)
+                        i += 1
+                        continue
+                    elif cs_info["is_mixed"]:
+                        # Mixed-language segment — handle individually with code-switch handler
+                        flush_batch()
+                        print(
+                            f"[translate] Code-switching detected in seg {i + 1} "
+                            f"(target_ratio={cs_info['target_script_ratio']}, "
+                            f"spans={len(cs_info['foreign_spans'])})"
+                        )
+                        cs_translated = translate_with_code_switch_handling(
+                            text, src, tgt, lambda t: self.translate(t, tgt)
+                        )
+                        if not cs_translated or cs_translated == text:
+                            # Fallback: translate normally
+                            cs_translated = self.translate(text, tgt)
+                        cs_translated = re.sub(r"\s+", " ", cs_translated).strip()
+                        emo_cs = detect_emotion(text) if tgt == "hi" else "casual"
+                        if tgt == "hi" and cs_translated:
+                            cs_translated = emphasize_keywords(cs_translated, emo_cs)
+                            cs_translated = finalize_hindi_spoken_segment(cs_translated)
+                            self._recent_context.append(cs_translated.strip())
+                            self._recent_context = self._recent_context[-2:]
+                        # LLM correction on code-switched segment
+                        if cs_translated and text:
+                            cs_translated = _llm_validate(
+                                text,
+                                cs_translated,
+                                retranslate_fn=lambda t: self.translate(t, tgt),
+                                source_lang=src,
+                                target_lang=tgt,
+                            )
+                        out.append({
+                            "start": seg["start"],
+                            "end": seg["end"],
+                            "text": text,
+                            "translated_text": cs_translated.strip(),
+                            **({"dub_emotion": emo_cs} if tgt == "hi" else {}),
+                            **_passthrough_stt_fields(seg),
+                        })
+                        if progress_callback:
+                            progress_callback(i + 1, total)
+                        i += 1
+                        continue
+                except Exception as cs_exc:
+                    print(f"[translate] Code-switch check failed (seg {i + 1}): {cs_exc}; proceeding normally")
 
             pending.append((i, seg, text))
             if len(pending) >= self._batch_flush_threshold(tgt):

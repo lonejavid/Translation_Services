@@ -37,10 +37,120 @@ const CACHE_DIR = path.join(USER_DATA, "cache");
 let mainWindow = null;
 let loadingWindow = null;
 let backendProcess = null;
+let ollamaProcess = null;
 let backendReady = false;
 let staticServer = null;
 let staticPort = 0;
 let intentionalShutdown = false;
+
+// ── Ollama (local LLM for translation validation) ────────────────────────────
+const OLLAMA_PORT = 11434;
+const OLLAMA_MODELS_DIR = path.join(USER_DATA, "ollama-models");
+
+/** Find the bundled Ollama binary — works both in packaged app and dev mode. */
+function getBundledOllamaBin() {
+  const candidates = [
+    process.resourcesPath && path.join(process.resourcesPath, "ollama", "ollama"),
+    path.join(__dirname, "resources", "ollama", "ollama"),
+    path.join(__dirname, "..", "electron", "resources", "ollama", "ollama"),
+  ].filter(Boolean);
+  return candidates.find((p) => fs.existsSync(p)) || null;
+}
+
+/** Check if Ollama HTTP API is already responding on localhost. */
+function isOllamaRunning() {
+  return new Promise((resolve) => {
+    http
+      .get(`http://127.0.0.1:${OLLAMA_PORT}`, (res) => { resolve(true); })
+      .on("error", () => { resolve(false); });
+  });
+}
+
+/**
+ * Pull llama3 in background — fire-and-forget.
+ * Only runs if the model manifest isn't already on disk.
+ * Shows a log message; does NOT block app startup.
+ */
+function pullModelBackground(ollamaBin) {
+  // Ollama stores model manifests here
+  const manifestDir = path.join(
+    OLLAMA_MODELS_DIR, "manifests", "registry.ollama.ai", "library", "llama3"
+  );
+  if (fs.existsSync(manifestDir)) {
+    console.log("[ollama] llama3 model already present — skipping pull.");
+    return;
+  }
+
+  console.log("[ollama] Pulling llama3 in background (~4.7 GB, one-time download)…");
+  const ollamaDir = path.dirname(ollamaBin);
+  const pull = spawn(ollamaBin, ["pull", "llama3"], {
+    env: {
+      ...process.env,
+      PATH: FULL_PATH,
+      OLLAMA_HOST: `127.0.0.1:${OLLAMA_PORT}`,
+      OLLAMA_MODELS: OLLAMA_MODELS_DIR,
+      DYLD_LIBRARY_PATH: `${ollamaDir}:${process.env.DYLD_LIBRARY_PATH || ""}`,
+      LD_LIBRARY_PATH: `${ollamaDir}:${process.env.LD_LIBRARY_PATH || ""}`,
+    },
+    stdio: "ignore",
+  });
+  pull.on("close", (code) => {
+    if (code === 0) console.log("[ollama] llama3 pull complete.");
+    else console.warn(`[ollama] llama3 pull exited with code ${code}.`);
+  });
+  pull.on("error", (err) => {
+    console.warn("[ollama] llama3 pull error:", err.message);
+  });
+}
+
+/**
+ * Start Ollama server if not already running, then pull llama3 in background.
+ * Non-blocking — returns immediately. App works fine even if this fails.
+ */
+async function ensureOllama() {
+  const ollamaBin = getBundledOllamaBin();
+  if (!ollamaBin) {
+    console.log("[ollama] No bundled binary found — LLM validator will be skipped.");
+    return;
+  }
+
+  const alreadyRunning = await isOllamaRunning();
+  if (alreadyRunning) {
+    console.log("[ollama] Already running on port", OLLAMA_PORT);
+    pullModelBackground(ollamaBin);
+    return;
+  }
+
+  sendStatus("Starting local AI assistant (background)…");
+  fs.mkdirSync(OLLAMA_MODELS_DIR, { recursive: true });
+
+  const ollamaDir = path.dirname(ollamaBin);
+  ollamaProcess = spawn(ollamaBin, ["serve"], {
+    env: {
+      ...process.env,
+      PATH: FULL_PATH,
+      OLLAMA_HOST: `127.0.0.1:${OLLAMA_PORT}`,
+      OLLAMA_MODELS: OLLAMA_MODELS_DIR,
+      // Needed so Ollama finds its bundled .dylib / .so files next to the binary
+      DYLD_LIBRARY_PATH: `${ollamaDir}:${process.env.DYLD_LIBRARY_PATH || ""}`,
+      LD_LIBRARY_PATH: `${ollamaDir}:${process.env.LD_LIBRARY_PATH || ""}`,
+    },
+    stdio: "ignore",
+  });
+
+  ollamaProcess.on("error", (err) => {
+    console.warn("[ollama] Failed to start:", err.message);
+    ollamaProcess = null;
+  });
+
+  ollamaProcess.on("exit", (code) => {
+    if (!intentionalShutdown) console.log("[ollama] Server exited with code", code);
+    ollamaProcess = null;
+  });
+
+  // Give Ollama a moment to bind to the port, then start the model pull
+  setTimeout(() => pullModelBackground(ollamaBin), 3000);
+}
 
 // ── Static file server for React build ──────────────────────────────────────
 // YouTube IFrame API refuses to load on file:// / null origins (Error 153).
@@ -541,6 +651,7 @@ app.whenReady().then(async () => {
     await ensureSetup();
     await freeBackendPort();
     startBackend();
+    ensureOllama(); // fire-and-forget — app works without it
 
     sendStatus("Waiting for server to be ready…");
     await waitForBackend();
@@ -570,6 +681,9 @@ app.on("before-quit", () => {
   intentionalShutdown = true;
   if (backendProcess) {
     backendProcess.kill("SIGTERM");
+  }
+  if (ollamaProcess) {
+    ollamaProcess.kill("SIGTERM");
   }
   if (staticServer) {
     staticServer.close();

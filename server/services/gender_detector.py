@@ -194,12 +194,22 @@ class GenderDetector:
         """
         observed_median = float(f0)
 
-        # Resolve ambiguous median using pitch distribution (common for androgynous / breathy speech)
+        # Resolve ambiguous median using pitch distribution.
+        # Stricter resolution: always push out of neutral zone using quartile evidence.
+        # "neutral" wastes the voice-clone gender hint — force male or female.
         if self._MALE_UPPER <= f0 <= self._FEMALE_LOWER and p25 is not None and p75 is not None:
-            if p75 > 198.0:
-                f0 = min(f0 + 12.0, self._FEMALE_LOWER + 8.0)
-            elif p25 < 148.0:
-                f0 = max(f0 - 12.0, self._MALE_UPPER - 8.0)
+            if p75 > 190.0:
+                # Upper quartile clearly in female range → female
+                f0 = self._FEMALE_LOWER + 10.0
+            elif p25 < 155.0:
+                # Lower quartile clearly in male range → male
+                f0 = self._MALE_UPPER - 10.0
+            elif f0 < (self._MALE_UPPER + self._FEMALE_LOWER) / 2:
+                # Closer to male boundary → default male
+                f0 = self._MALE_UPPER - 5.0
+            else:
+                # Closer to female boundary → default female
+                f0 = self._FEMALE_LOWER + 5.0
 
         if f0 < self._MALE_UPPER:
             gender = "male"

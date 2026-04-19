@@ -38,8 +38,12 @@ yarn-debug.log*
 yarn-error.log*
 
 # IDE & OS
+.claude/settings.local.json
 .idea/
 .vscode/
+
+# Bundled Ollama (100MB+); download at build via scripts/download-ollama.js
+electron/resources/ollama/
 *.swp
 .DS_Store
 Thumbs.db

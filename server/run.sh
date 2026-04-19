@@ -136,7 +136,13 @@ export TTS_HI_USE_XTTS_CLONE="${TTS_HI_USE_XTTS_CLONE:-0}"
 export HINDI_TTS_ENGINE="${HINDI_TTS_ENGINE:-edge}"
 
 
-echo "Starting server..."
+PORT="${PORT:-8000}"
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "ERROR: port $PORT is already in use. Stop the other process (see: lsof -nP -iTCP:$PORT -sTCP:LISTEN) or run: PORT=8001 $0"
+  exit 1
+fi
+
+echo "Starting server on port $PORT..."
 # Single worker: the pipeline uses in-memory job tracking and mutex locks that
 # must not be split across OS processes.  Multi-worker requires an external
 # broker (Redis/celery) — not needed for local use.
@@ -144,7 +150,7 @@ echo "Starting server..."
 # model re-downloads on save).
 exec python -m uvicorn main:app \
   --host 0.0.0.0 \
-  --port 8000 \
+  --port "$PORT" \
   --workers 1 \
   --log-level info \
   --timeout-keep-alive 120 \

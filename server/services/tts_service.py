@@ -132,8 +132,10 @@ def _clone_debug_verbose() -> bool:
 
 
 def _chatterbox_first() -> bool:
+    # Default ON — Chatterbox does zero-shot voice cloning in one pass.
+    # Edge TTS (old default) produces a generic voice with no speaker identity.
     """If True, try Chatterbox before Edge; default False prioritizes intelligible Edge neural TTS."""
-    return os.environ.get("TTS_CHATTERBOX_FIRST", "0").strip().lower() in (
+    return os.environ.get("TTS_CHATTERBOX_FIRST", "1").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -163,7 +165,7 @@ def _clarity_mode() -> bool:
     When on (default): keep Edge TTS output pristine (skip OpenVoice / voice_convert on Edge
     segments) and default segment time-stretch off for less phase-vocoder smear.
     """
-    return os.environ.get("TTS_CLARITY_MODE", "1").strip().lower() not in (
+    return os.environ.get("TTS_CLARITY_MODE", "0").strip().lower() not in (
         "0",
         "false",
         "no",
@@ -418,11 +420,37 @@ def _hindi_use_edge_fallback() -> bool:
 
 
 def _hindi_segment_crossfade_ms() -> int:
-    """Overlap when stitching Hindi segment WAVs (50–100 ms recommended)."""
-    raw = os.environ.get("TTS_HINDI_CROSSFADE_MS", "75").strip()
+    """
+    Overlap when stitching Hindi segment WAVs (pydub ``append(..., crossfade=…)``).
+
+    Previously defaults forced 50–100 ms, which blended the *tail* of each clip into
+    the **first ~75 ms** of the next Hindi clip — masking Devanagari onsets (users hear
+    missing opening words). Keep overlap small (default 14 ms); set ``0`` for none.
+    Upper cap remains so env mistakes cannot erase whole phrases.
+    """
+    raw = os.environ.get("TTS_HINDI_CROSSFADE_MS", "14").strip()
     if raw.isdigit():
-        return max(50, min(100, int(raw)))
-    return 75
+        return max(0, min(120, int(raw)))
+    return 14
+
+
+def _segment_leading_pad_ms(target_language: str) -> int:
+    """
+    Milliseconds of silence prepended to each synthesized segment **before** gap/crossfade.
+
+    Crossfade mixes the previous subtitle's decay into the *start* of the next clip.
+    Padding ensures that overlap lands on silence, not on the first syllables.
+    Disabled when ``TTS_SEGMENT_LEADING_PAD_MS=0``. Hindi default unless overridden.
+    """
+    raw = os.environ.get("TTS_SEGMENT_LEADING_PAD_MS", "").strip()
+    if raw.isdigit():
+        return max(0, min(400, int(raw)))
+    if _normalize_lang(target_language) == "hi":
+        pad = os.environ.get("TTS_SEGMENT_LEADING_PAD_HI_MS", "").strip()
+        if pad.isdigit():
+            return max(0, min(400, int(pad)))
+        return 72
+    return 0
 
 
 def _segment_crossfade_ms(target_language: str) -> int:
@@ -1366,6 +1394,13 @@ def generate_dubbed_audio(
     master_sr = _dub_master_sample_rate()
     gap_ms = _segment_gap_ms_for_target(target_language)
     crossfade_ms = _segment_crossfade_ms(target_language)
+    leading_pad_ms = _segment_leading_pad_ms(target_language)
+    print(
+        f"[TTS] Stitch: gap={gap_ms}ms crossfade={crossfade_ms}ms "
+        f"leading_pad_per_segment={leading_pad_ms}ms "
+        f"(crossfade overlaps previous tail onto next clip — keep small; "
+        f"TTS_SEGMENT_LEADING_PAD_MS / TTS_HINDI_CROSSFADE_MS)"
+    )
 
     combined = AudioSegment.silent(duration=0)
     total = len(segments)
@@ -1751,6 +1786,13 @@ def generate_dubbed_audio(
                 .set_channels(1)
                 .set_frame_rate(master_sr)
             )
+            if leading_pad_ms > 0:
+                clip = (
+                    AudioSegment.silent(
+                        duration=leading_pad_ms, frame_rate=master_sr
+                    ).set_channels(1)
+                    + clip
+                )
 
             if not first_audio and gap_ms > 0:
                 combined += AudioSegment.silent(duration=gap_ms)

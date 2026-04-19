@@ -14,8 +14,8 @@
     "build-client": "cd client && npm run build",
     "electron": "env -u ELECTRON_RUN_AS_NODE electron .",
     "electron-dev": "concurrently \"cd server && ./run.sh\" \"wait-on http://127.0.0.1:8000/health && env -u ELECTRON_RUN_AS_NODE electron .\"",
-    "dist": "npm run build-client && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --arm64",
-    "dist-x64": "npm run build-client && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --x64"
+    "dist": "node scripts/download-ollama.js && npm run build-client && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --arm64",
+    "dist-x64": "node scripts/download-ollama.js && npm run build-client && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --x64"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",
@@ -60,7 +60,12 @@
       "!**/*.pyc",
       "!**/.git/**/*"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "electron/resources/ollama",
+        "to": "ollama"
+      }
+    ],
     "asar": false
   }
 }

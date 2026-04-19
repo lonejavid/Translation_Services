@@ -457,6 +457,19 @@ function Player() {
                     </svg>
                     Download Dubbed Audio (MP3)
                   </a>
+                  <div className="yt-export-divider"><span>AI Validation</span></div>
+                  <a
+                    href={`${API_BASE}/api/llm-validation-log`}
+                    download="llm_validation_log.txt"
+                    className="yt-btn-tool yt-btn-tool--secondary"
+                    title="Download a log of every translation the LLM validated or improved"
+                  >
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+                      <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                    </svg>
+                    Download LLM validation log
+                  </a>
+
                   {originalTxtUrl && translatedTxtUrl && (
                     <>
                       <div className="yt-export-divider">

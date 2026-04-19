@@ -87,7 +87,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from services.downloader import download_audio
 from services.transcriber import transcribe
-from services.tts_service import generate_dubbed_audio, resolve_dub_output_path
+
+# tts_service imports torch + transformers (~GB RAM). Import lazily when dubbing runs
+# so uvicorn can start without loading the full TTS stack (avoids macOS OOM SIGKILL).
 
 # ---------------------------------------------------------------------------
 # Structured logging — JSON format for production observability
@@ -504,6 +506,8 @@ def _merge_word_timestamps_into_translated(
 
 
 def _dub_output_disk_path(cache_key: str) -> Path:
+    from services.tts_service import resolve_dub_output_path
+
     return Path(resolve_dub_output_path(str(CACHE_DIR / f"{cache_key}.mp3")))
 
 
@@ -702,6 +706,8 @@ def _run_redub_sync(ck: str) -> dict:
         logger.warning(f"[redub] Speaker-aware enrich skipped: {ex!r}")
 
     try:
+        from services.tts_service import generate_dubbed_audio
+
         written_dub, dub_sync = generate_dubbed_audio(
             translated,
             dub_path_arg,
@@ -1197,6 +1203,8 @@ def _run_pipeline(
 
             xtts_ref_path = str((CACHE_DIR / f"{cache_key}_xtts_ref.wav").resolve())
             try:
+                from services.tts_service import generate_dubbed_audio
+
                 written_dub, dub_sync = generate_dubbed_audio(
                     translated,
                     dub_path_arg,
@@ -1338,6 +1346,7 @@ def _run_pipeline(
 @app.get("/health")
 def health():
     """Detailed health check for monitoring / load balancers."""
+    import urllib.request as _ur
     disk = shutil.disk_usage(CACHE_DIR)
     free_gb = round(disk.free / (1024 ** 3), 2)
     try:
@@ -1346,6 +1355,31 @@ def health():
         cache_files = -1
     with _inflight_job_lock:
         active_jobs = len(_inflight_job_by_cache)
+
+    # Check Ollama / LLM validator status
+    ollama_running = False
+    llama3_loaded = False
+    try:
+        with _ur.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+            import json as _json
+            tags = _json.loads(r.read())
+            ollama_running = True
+            llama3_loaded = any(
+                "llama3" in m.get("name", "") for m in tags.get("models", [])
+            )
+    except Exception:
+        pass
+
+    log_path = CACHE_DIR / "llm_validation_log.txt"
+    validation_log_entries = 0
+    if log_path.is_file():
+        try:
+            validation_log_entries = log_path.read_text("utf-8").count("] VALIDATED") + \
+                                     log_path.read_text("utf-8").count("] SKIPPED") + \
+                                     log_path.read_text("utf-8").count("] CACHE HIT")
+        except Exception:
+            pass
+
     return {
         "status": "ok",
         "ffmpeg": bool(shutil.which("ffmpeg")),
@@ -1354,6 +1388,12 @@ def health():
         "cache_files": cache_files,
         "active_jobs": active_jobs,
         "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
+        "llm_validator": {
+            "ollama_running": ollama_running,
+            "llama3_ready": llama3_loaded,
+            "fully_operational": ollama_running and llama3_loaded,
+            "validation_log_entries": validation_log_entries,
+        },
     }
 
 
@@ -2340,6 +2380,31 @@ async def download_export_video_file(cache_key: str):
         str(output_mp4),
         media_type="video/mp4",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/llm-validation-log")
+def download_llm_validation_log():
+    """Download the LLM validation log file as a .txt attachment."""
+    log_path = CACHE_DIR / "llm_validation_log.txt"
+    if not log_path.is_file():
+        # Return an empty placeholder so the download always works
+        empty = (
+            "LLM Validation Log\n"
+            "==================\n\n"
+            "No validation events recorded yet.\n\n"
+            "Translate an English video to Hindi (or another Indic language)\n"
+            "to see validation entries here.\n"
+        )
+        return Response(
+            content=empty,
+            media_type="text/plain",
+            headers={"Content-Disposition": 'attachment; filename="llm_validation_log.txt"'},
+        )
+    return FileResponse(
+        str(log_path),
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="llm_validation_log.txt"'},
     )
 
 

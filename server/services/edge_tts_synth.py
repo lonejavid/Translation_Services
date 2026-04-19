@@ -553,11 +553,21 @@ def _trim_silence(wav: np.ndarray, sr: int, db_threshold: float = -50.0) -> np.n
 
     XTTS sometimes pads output with several seconds of near-silence, making
     dubbed segments far longer than the source — this removes that padding.
+
+    Leading trim is capped (``TRIM_SILENCE_MAX_LEAD_MS``, default 120 ms): soft consonants
+    or language onsets can sit below the RMS threshold for the first frames; trimming
+    past the cap would clip real speech.
     """
     if wav.size == 0:
         return wav
     frame = max(1, int(sr * 0.02))   # 20 ms
     threshold = 10 ** (db_threshold / 20.0)
+    try:
+        max_lead_ms = float(os.environ.get("TRIM_SILENCE_MAX_LEAD_MS", "120") or "120")
+    except ValueError:
+        max_lead_ms = 120.0
+    max_lead_ms = max(0.0, min(400.0, max_lead_ms))
+    max_lead_samples = int(sr * (max_lead_ms / 1000.0))
 
     # Find first voiced frame from the start
     start_frame = 0
@@ -566,6 +576,8 @@ def _trim_silence(wav: np.ndarray, sr: int, db_threshold: float = -50.0) -> np.n
         if rms >= threshold:
             start_frame = i
             break
+    if max_lead_samples > 0 and start_frame > max_lead_samples:
+        start_frame = 0
 
     # Find last voiced frame from the end
     end_frame = len(wav)
