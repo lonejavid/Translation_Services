@@ -1,0 +1,93 @@
+[
+  {
+    "id": "6770b0ac-fe96-4957-9358-eb6eba4c4239",
+    "cache_key": "f8279f61fc11f5f4704489d81ae0d698",
+    "segment_index": 8,
+    "segment_id": "segment_8",
+    "source_text": "So I think as I grew up, you have to be educated and learn along the way",
+    "incorrect_translation": "इसलिए मुझे लगता है कि जैसे-जैसे मैं बड़ा हुआ, आपको शिक्षित होना होगा और साथ ही सीखना भी होगा।",
+    "corrected_translation": "इसलिए मुझे लगता है कि जैसे-जैसे मैं बड़ा हुआ, आपको शिक्षित होना होगा और साथ ही सीखना भी होगा।",
+    "source_lang": "en",
+    "target_lang": "hi",
+    "video_id": "0ESOsJcYteU",
+    "timestamp": "2026-03-30T06:09:18Z"
+  },
+  {
+    "id": "b37bbca2-972b-4ec6-88be-021943053074",
+    "cache_key": "615492f51129ceabbf5f00f7b6218c65",
+    "segment_index": 2,
+    "segment_id": "segment_2",
+    "source_text": "you can never miss two ways in a row",
+    "incorrect_translation": "आप कभी भी एक पंक्ति में दो रास्ते नहीं चूक सकते",
+    "corrected_translation": "आप कभी भी एक पंक्ति में दो रास्ते नहीं च",
+    "source_lang": "en",
+    "target_lang": "hi",
+    "video_id": "uMKNhS8BDuE",
+    "timestamp": "2026-04-10T06:10:13Z"
+  },
+  {
+    "id": "226ef2c0-4e5c-4197-bb22-8c88c7ae5f7a",
+    "cache_key": "615492f51129ceabbf5f00f7b6218c65",
+    "segment_index": 0,
+    "segment_id": "segment_0",
+    "source_text": "favorite law from James",
+    "incorrect_translation": "और यह James Blake से मेरा पसंदीदा कानून है",
+    "corrected_translation": "और यह James Blake",
+    "source_lang": "en",
+    "target_lang": "hi",
+    "video_id": "uMKNhS8BDuE",
+    "timestamp": "2026-04-10T06:10:55Z"
+  },
+  {
+    "id": "668da2b5-c12e-4440-a851-77c8a41ab50b",
+    "cache_key": "c2096c8693aefd4421f1e56d1a041286",
+    "segment_index": 0,
+    "segment_id": "segment_0",
+    "source_text": "We have one life in this.",
+    "incorrect_translation": "ولنا في هذا حياة واحدة.",
+    "corrected_translation": "لدينا حياة واحدة في هذه الدنيا",
+    "source_lang": "en",
+    "target_lang": "ar",
+    "video_id": "I1MsT6msPj8",
+    "timestamp": "2026-04-11T08:48:08Z"
+  },
+  {
+    "id": "ae94636a-ccc7-4a49-9bbb-737d7e20bd4e",
+    "cache_key": "0ba0b22eb72375b79fcafd807a390b76",
+    "segment_index": 0,
+    "segment_id": "segment_0",
+    "source_text": "Your country never had a lady from a poor tribal family becoming the President of India. You have that in javid .Prime Minister Modi has done that.",
+    "incorrect_translation": "आपके देश में कभी भी किसी गरीब आदिवासी परिवार की महिला India की President नहीं बनी। They में वह President Bhattadurai में नहीं है। Prime Minister Modi ने ऐसा किया है.",
+    "corrected_translation": "आपके देश में कभी भी किसी गरीब आदिवासी परिवार की महिला India की President नहीं बनी। They में वह President Bhattadurai में नहीं है। Prime Minister Modi ने ऐसा किया है.",
+    "source_lang": "en",
+    "target_lang": "hi",
+    "video_id": "mTL4zyINcYE",
+    "timestamp": "2026-04-11T08:57:31Z"
+  },
+  {
+    "id": "473c4b5f-6255-4293-bd44-f5d5370f7beb",
+    "cache_key": "c55b7d7f9a0cd1fd86af6748df6ba36e",
+    "segment_index": 0,
+    "segment_id": "segment_0",
+    "source_text": "You know what makes you perfect?",
+    "incorrect_translation": "क्या आप जानते हैं कौन सी चीज़ आपको परिपूर्ण बनाती है?",
+    "corrected_translation": "क्या आप जानती हैं कौन सी चीज़ आपको perfect बनाती है?",
+    "source_lang": "en",
+    "target_lang": "hi",
+    "video_id": "j3_Xr5aeu0Q",
+    "timestamp": "2026-04-11T14:57:04Z"
+  },
+  {
+    "id": "09cc8b47-3ffa-432b-b218-4432f2f1186f",
+    "cache_key": "c55b7d7f9a0cd1fd86af6748df6ba36e",
+    "segment_index": 1,
+    "segment_id": "segment_1",
+    "source_text": "When you make someone smile.",
+    "incorrect_translation": "When आप किसी को मुस्कुराने पर मजबूर कर देते हैं।",
+    "corrected_translation": "जब आप किसी के चेहरे पर मुस्कान ला देती हैं।",
+    "source_lang": "en",
+    "target_lang": "hi",
+    "video_id": "j3_Xr5aeu0Q",
+    "timestamp": "2026-04-11T14:58:38Z"
+  }
+]
