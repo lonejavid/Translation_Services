@@ -1,5 +1,0 @@
-file 'seg_da902a91_0.wav'
-file 'seg_da902a91_1.wav'
-file 'seg_da902a91_2.wav'
-file 'seg_da902a91_3.wav'
-file 'seg_da902a91_4.wav'

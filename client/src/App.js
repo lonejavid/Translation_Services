@@ -6,9 +6,10 @@ import TranscriptEditor from "./pages/TranscriptEditor";
 import TranslationEditor from "./pages/TranslationEditor";
 import ErrorBoundary from "./components/ErrorBoundary";
 
-// In Electron the app is served via file:// so BrowserRouter breaks.
-// HashRouter (#/) works in both Electron (file://) and browser (dev server).
-// API always points to the local FastAPI backend on port 8000.
+/**
+ * API_BASE defines the connection to your FastAPI backend.
+ * In Electron or local development, this defaults to localhost:8000.
+ */
 export const API_BASE =
   process.env.REACT_APP_API_URL !== undefined && process.env.REACT_APP_API_URL !== ""
     ? process.env.REACT_APP_API_URL
@@ -17,12 +18,26 @@ export const API_BASE =
 function App() {
   return (
     <ErrorBoundary>
+      {/* 
+          HashRouter is used because Electron serves files via the file:// protocol, 
+           which doesn't support the HTML5 History API used by BrowserRouter.
+      */}
       <HashRouter>
         <Routes>
+          {/* Main landing page to input YouTube URLs */}
           <Route path="/" element={<Home />} />
+          
+          {/* 
+              The Player page now handles both the YouTube preview 
+              and the local .mp4 playback once translation is complete.
+          */}
           <Route path="/player" element={<Player />} />
+          
+          {/* Editors for fine-tuning AI-generated content */}
           <Route path="/editor" element={<TranscriptEditor />} />
           <Route path="/translation-editor" element={<TranslationEditor />} />
+          
+          {/* Redirects for legacy routes or typos */}
           <Route path="/watch" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -1,5 +1,0 @@
-file 'seg_b6d30064_0.wav'
-file 'seg_b6d30064_1.wav'
-file 'seg_b6d30064_2.wav'
-file 'seg_b6d30064_3.wav'
-file 'seg_b6d30064_4.wav'
